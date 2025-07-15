@@ -6,6 +6,19 @@ import (
 	"os"
 	"net/http"
 	"strings"
+	"sync"
+)
+
+type config struct {
+	pages map[string]int
+	baseURL string
+	mu *sync.Mutex
+	concurrencyControl chan struct{}
+	wg *sync.WaitGroup
+}
+
+const (
+	CONCURRENCY_LEVEL int = 1	
 )
 
 func getHTML(rawURL string) (string, error) {
@@ -36,8 +49,17 @@ func getHTML(rawURL string) (string, error) {
 	return string(buf), nil
 }
 
-func crawlPage(rawBaseURL, currentURL string, pages map[string]int) {
-	if !strings.HasPrefix(currentURL, rawBaseURL) {
+func (cfg *config) crawlPage(currentURL string) {
+
+	cfg.concurrencyControl <- struct{}{}
+	defer func(){
+		<-cfg.concurrencyControl
+		cfg.wg.Done()
+	}()
+
+
+	if !strings.HasPrefix(currentURL, cfg.baseURL) {
+		fmt.Printf("Discarded URL: %s\n", currentURL)
 		return
 	}
 
@@ -46,13 +68,18 @@ func crawlPage(rawBaseURL, currentURL string, pages map[string]int) {
 		return
 	}
 
-	_, ok := pages[normURL]
+	cfg.mu.Lock()
+	_, ok := cfg.pages[normURL]
 	if ok {
-		pages[normURL] += 1
+		cfg.pages[normURL] += 1
+		// HERE: Forgot to unlock
+		cfg.mu.Unlock()
 		return
 	}
 
-	pages[normURL] = 1
+	cfg.pages[normURL] = 1
+	cfg.mu.Unlock()
+
 	fmt.Printf("Crawling %s\n", currentURL)
 
 	html, err := getHTML(currentURL)
@@ -60,12 +87,20 @@ func crawlPage(rawBaseURL, currentURL string, pages map[string]int) {
 		fmt.Printf("%v\n", err.Error())
 		return
 	}
-	
+
+
 	// fmt.Printf("%s\n", html)
-	links, err := getURLSFromHTML(html, rawBaseURL)
-	for _, l := range links {
-		crawlPage(rawBaseURL, l, pages)
+	links, err := getURLSFromHTML(html, cfg.baseURL)
+	if err != nil {
+		return
 	}
+
+	for _, l := range links {
+		cfg.wg.Add(1)
+		go cfg.crawlPage(l)
+	}
+
+
 }
 		
 func main() {
@@ -79,13 +114,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	cfg := config{
+		pages: make(map[string]int),
+		baseURL: os.Args[1],
+		mu: &sync.Mutex{},
+		concurrencyControl: make(chan struct{}, CONCURRENCY_LEVEL),
+		wg: &sync.WaitGroup{},
+	}
+
 	fmt.Printf("starting crawl of: %v\n", os.Args[1])
 
-	pages := make(map[string]int)
-	crawlPage(os.Args[1], os.Args[1], pages)
+	cfg.wg.Add(1)
+	go cfg.crawlPage(os.Args[1])
+
+	cfg.wg.Wait()
 
 	fmt.Printf("================================\n")
-	for k, v := range pages {
+	for k, v := range cfg.pages {
 		fmt.Printf("%s: %d\n", k, v)
 	}
 }
