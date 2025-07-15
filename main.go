@@ -6,6 +6,7 @@ import (
 	"os"
 	"net/http"
 	"strings"
+	"strconv"
 	"sync"
 )
 
@@ -15,6 +16,8 @@ type config struct {
 	mu *sync.Mutex
 	concurrencyControl chan struct{}
 	wg *sync.WaitGroup
+	maxPages int
+	maxConcurrency int
 }
 
 const (
@@ -51,12 +54,20 @@ func getHTML(rawURL string) (string, error) {
 
 func (cfg *config) crawlPage(currentURL string) {
 
+
 	cfg.concurrencyControl <- struct{}{}
 	defer func(){
 		<-cfg.concurrencyControl
 		cfg.wg.Done()
 	}()
 
+	cfg.mu.Lock()
+	pagesSize := len(cfg.pages)
+	cfg.mu.Unlock()
+
+	if pagesSize >= cfg.maxPages {
+		return
+	}
 
 	if !strings.HasPrefix(currentURL, cfg.baseURL) {
 		fmt.Printf("Discarded URL: %s\n", currentURL)
@@ -109,17 +120,37 @@ func main() {
 		os.Exit(1)
 	}
 
-	if len(os.Args) > 2 {
-		fmt.Printf("too many arguments provided\n")
+	if len(os.Args) == 3 || len(os.Args) > 4 {
+		fmt.Printf("Usage: %s <baseURL> <maxConcurrency> <maxPages>\n")
 		os.Exit(1)
+	}
+
+	maxConcurrency := 5
+	maxPages := 10
+	var err error
+
+	if len(os.Args) == 4 {
+
+		maxConcurrency, err = strconv.Atoi(os.Args[2])
+		if err != nil {
+			fmt.Printf("Incorrect maxConcurrency: %v %v\n", os.Args[2], err)
+			os.Exit(1)
+		}
+
+		maxPages, err = strconv.Atoi(os.Args[3])
+		if err != nil {
+			fmt.Printf("Incorrect maxPages: %v %v\n", os.Args[3], err)
+			os.Exit(1)
+		}
 	}
 
 	cfg := config{
 		pages: make(map[string]int),
 		baseURL: os.Args[1],
 		mu: &sync.Mutex{},
-		concurrencyControl: make(chan struct{}, CONCURRENCY_LEVEL),
+		concurrencyControl: make(chan struct{}, maxConcurrency),
 		wg: &sync.WaitGroup{},
+		maxPages: maxPages,
 	}
 
 	fmt.Printf("starting crawl of: %v\n", os.Args[1])
