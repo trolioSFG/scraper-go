@@ -8,6 +8,7 @@ import (
 	"strings"
 	"strconv"
 	"sync"
+	"sort"
 )
 
 type config struct {
@@ -113,7 +114,51 @@ func (cfg *config) crawlPage(currentURL string) {
 
 
 }
-		
+
+type Page struct {
+	url string
+	count int
+}
+
+type PageList []Page
+
+func (p PageList) Len() int { return len(p) }
+func (p PageList) Less(i, j int) bool {
+	if p[i].count != p[j].count {
+		return p[i].count < p[j].count
+	}
+
+	// Fixed sort alphabetically
+	return p[i].url > p[j].url
+}
+func (p PageList) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
+
+func sortPages(pages map[string]int) PageList {
+	pageCounts := make(PageList, len(pages))
+	i := 0
+	for k, v := range pages {
+		pageCounts[i] = Page{ url: k, count: v }
+		i++
+	}
+
+	sort.Sort(sort.Reverse(pageCounts))
+	return pageCounts
+}
+
+
+func printReport(pages map[string]int, baseURL string) {
+	fmt.Printf("=============================\n")
+	fmt.Printf("REPORT for %s\n", baseURL)
+	fmt.Printf("=============================\n")
+
+	pageCounts := sortPages(pages)
+
+	for k := range pageCounts {
+		fmt.Printf("Found %d internal links to %s\n", pageCounts[k].count, pageCounts[k].url)
+	}
+}
+
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Printf("no website provided\n")
@@ -160,9 +205,12 @@ func main() {
 
 	cfg.wg.Wait()
 
+	/**
 	fmt.Printf("================================\n")
 	for k, v := range cfg.pages {
 		fmt.Printf("%s: %d\n", k, v)
 	}
+	*/
+	printReport(cfg.pages, os.Args[1])
 }
 
