@@ -1,7 +1,7 @@
 package main
 
 import (
-	"strings"
+//	"strings"
 	"net/url"
 )
 
@@ -13,5 +13,5 @@ func normalizeURL(raw string) (string, error) {
 		return "", err
 	}
 
-	return parsedURL.Host + strings.TrimSuffix(parsedURL.Path, "/"), nil
+	return parsedURL.Host + parsedURL.RequestURI(), nil
 }

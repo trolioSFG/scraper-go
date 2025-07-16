@@ -5,14 +5,19 @@ import (
 	"strings"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
+	"net/url"
 )
 
-func traverse(doc *html.Node) []string {
-	links := []string{}
+func traverse(doc *html.Node) []*url.URL {
+	links := []*url.URL{}
 	if doc.Type == html.ElementNode && doc.DataAtom == atom.A {
 		for _, a := range doc.Attr {
 			if a.Key == "href" {
-				links = append(links, a.Val)
+				newLink, err := url.Parse(a.Val)
+				if err != nil {
+					break
+				}
+				links = append(links, newLink)
 				break
 			}
 		}
@@ -26,7 +31,7 @@ func traverse(doc *html.Node) []string {
 }
 
 
-func getURLSFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
+func getURLSFromHTML(htmlBody string, bu *url.URL) ([]*url.URL, error) {
 
 	doc, err := html.Parse(strings.NewReader(htmlBody))
 	if err != nil {
@@ -36,8 +41,11 @@ func getURLSFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
 	links := traverse(doc)
 
 	for i, l := range links {
-		if strings.HasPrefix(l, "/") {
-			links[i] = rawBaseURL + l
+		if l.Host == "" {
+			// fmt.Printf("Pre: %v\n", l)
+			links[i].Host = bu.Host
+			links[i].Scheme = bu.Scheme
+			// fmt.Printf("Post: %v\n", l)
 		}
 	}
 

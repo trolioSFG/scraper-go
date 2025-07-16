@@ -9,11 +9,12 @@ import (
 	"strconv"
 	"sync"
 	"sort"
+	"net/url"
 )
 
 type config struct {
 	pages map[string]int
-	baseURL string
+	baseURL *url.URL
 	mu *sync.Mutex
 	concurrencyControl chan struct{}
 	wg *sync.WaitGroup
@@ -53,7 +54,7 @@ func getHTML(rawURL string) (string, error) {
 	return string(buf), nil
 }
 
-func (cfg *config) crawlPage(currentURL string) {
+func (cfg *config) crawlPage(currentURL *url.URL) {
 
 
 	cfg.concurrencyControl <- struct{}{}
@@ -70,12 +71,17 @@ func (cfg *config) crawlPage(currentURL string) {
 		return
 	}
 
+	/**
 	if !strings.HasPrefix(currentURL, cfg.baseURL) {
 		fmt.Printf("Discarded URL: %s\n", currentURL)
 		return
 	}
+	**/
+	if currentURL.Host != cfg.baseURL.Host {
+		fmt.Printf("Discarded URL: %v\n", currentURL.String())
+	}
 
-	normURL, err := normalizeURL(currentURL)
+	normURL, err := normalizeURL(currentURL.String())
 	if err != nil {
 		return
 	}
@@ -92,9 +98,9 @@ func (cfg *config) crawlPage(currentURL string) {
 	cfg.pages[normURL] = 1
 	cfg.mu.Unlock()
 
-	fmt.Printf("Crawling %s\n", currentURL)
+	fmt.Printf("Crawling %s\n", currentURL.String())
 
-	html, err := getHTML(currentURL)
+	html, err := getHTML(currentURL.String())
 	if err != nil {
 		fmt.Printf("%v\n", err.Error())
 		return
@@ -146,7 +152,7 @@ func sortPages(pages map[string]int) PageList {
 }
 
 
-func printReport(pages map[string]int, baseURL string) {
+func printReport(pages map[string]int, baseURL *url.URL) {
 	fmt.Printf("=============================\n")
 	fmt.Printf("REPORT for %s\n", baseURL)
 	fmt.Printf("=============================\n")
@@ -189,19 +195,25 @@ func main() {
 		}
 	}
 
+	baseURL, err := url.Parse(os.Args[1])
+	if err != nil {
+		fmt.Printf("Error parsing baseURL: %s\n")
+		os.Exit(1)
+	}
+
 	cfg := config{
 		pages: make(map[string]int),
-		baseURL: os.Args[1],
+		baseURL: baseURL,
 		mu: &sync.Mutex{},
 		concurrencyControl: make(chan struct{}, maxConcurrency),
 		wg: &sync.WaitGroup{},
 		maxPages: maxPages,
 	}
 
-	fmt.Printf("starting crawl of: %v\n", os.Args[1])
+	fmt.Printf("starting crawl of: %v\n", baseURL)
 
 	cfg.wg.Add(1)
-	go cfg.crawlPage(os.Args[1])
+	go cfg.crawlPage(baseURL)
 
 	cfg.wg.Wait()
 
@@ -211,6 +223,6 @@ func main() {
 		fmt.Printf("%s: %d\n", k, v)
 	}
 	*/
-	printReport(cfg.pages, os.Args[1])
+	printReport(cfg.pages, baseURL)
 }
 
